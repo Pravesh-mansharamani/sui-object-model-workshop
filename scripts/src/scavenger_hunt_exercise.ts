@@ -38,32 +38,65 @@ const main = async () => {
    *
    * Create a new Transaction instance from the @mysten/sui/transactions module.
    */
+  const tx = new Transaction();
 
   /**
    * Task 2:
    *
    * Create a new key using the `key::new` function.
    */
+  const [key] = tx.moveCall({
+    target: `${PACKAGE_ID}::key::new`,
+  });
 
   /**
    * Task 3:
    *
    * Set the key code correctly using the `key::set_code` function.
+   * Based on the README hint, we need to check the vault object fields to get the correct code.
+   * Let's first try to get the vault object data to find the code.
    */
+  
+  // First, let's get the vault object to find the correct code
+  const vaultObject = await suiClient.getObject({
+    id: VAULT_ID,
+    options: {
+      showContent: true,
+    },
+  });
+
+  if (vaultObject.data?.content && 'fields' in vaultObject.data.content) {
+    const vaultFields = vaultObject.data.content.fields as any;
+    const vaultCode = vaultFields.code;
+    
+    console.log("Vault code found:", vaultCode);
+    
+    tx.moveCall({
+      target: `${PACKAGE_ID}::key::set_code`,
+      arguments: [key, tx.pure.u64(vaultCode)],
+    });
+  } else {
+    console.error("Could not retrieve vault object data");
+    return;
+  }
 
   /**
    * Task 4:
    *
    * Use the key to withdraw the `SUI` coin from the vault using the `vault::withdraw` function.
    */
-  
+  const [suiCoin] = tx.moveCall({
+    target: `${PACKAGE_ID}::vault::withdraw`,
+    typeArguments: ["0x2::sui::SUI"],
+    arguments: [tx.object(VAULT_ID), key],
+  });
 
   /**
    * Task 5:
    *
    * Transfer the `SUI` coin to your account.
    */
-
+  tx.transferObjects([suiCoin], keypair.getPublicKey().toSuiAddress());
 
   /**
    * Task 6:
@@ -75,7 +108,14 @@ const main = async () => {
    * Resources:
    * - Observing transaction results: https://sdk.mystenlabs.com/typescript/transaction-building/basics#observing-the-results-of-a-transaction
    */
+  const result = await suiClient.signAndExecuteTransaction({
+    signer: keypair,
+    transaction: tx,
+  });
 
+  console.log("Transaction result:", result);
+  console.log("Digest:", result.digest);
+  console.log("View your transaction at: https://suiscan.xyz/testnet/tx/" + result.digest);
 
   /**
    * Task 7: Run the script with the command below and ensure it works!
